@@ -1,0 +1,6 @@
+[
+  { "iata": "JFK", "name": "John F Kennedy Intl", "city": "New York", "country": "US" },
+  { "iata": "LGA", "name": "LaGuardia", "city": "New York", "country": "US" },
+  { "iata": "EWR", "name": "Newark Liberty Intl", "city": "Newark", "country": "US" },
+  { "iata": "BOS", "name": "Logan Intl", "city": "Boston", "country": "US" }
+]

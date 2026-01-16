@@ -15,13 +15,13 @@
         <div class="box">
           <div class="lab"><span>Departures</span><span>Enter to add</span></div>
           <div class="chips" id="depChips"></div>
-          <input id="depIn" placeholder="JFK, BOS, NYC" />
+          <input id="depIn" list="airportList" placeholder="JFK, BOS, NYC" />
         </div>
 
         <div class="box">
           <div class="lab"><span>Arrivals</span><span>Enter to add</span></div>
           <div class="chips" id="arrChips"></div>
-          <input id="arrIn" placeholder="LHR, CDG, SFO" />
+          <input id="arrIn" list="airportList" placeholder="LHR, CDG, SFO" />
         </div>
 
         <div class="box mid">
@@ -31,11 +31,6 @@
             <input id="d2" type="date" />
           </div>
           <small>No defaults: backend decides exact dates within range.</small>
-        </div>
-
-        <div class="box small">
-          <div class="lab"><span>People</span><span>1–9</span></div>
-          <input id="pax" type="number" min="1" max="9" />
         </div>
 
         <div class="btnwrap">
@@ -58,217 +53,6 @@
     </section>
   </div>
 
-<script>
-/* ====== CONFIG ====== */
-const API_URL = ""; // e.g. "https://your-service.a.run.app/search"
 
-/* ====== DOM + STATE ====== */
-const $ = (id) => document.getElementById(id);
-const S = { dep: [], arr: [], results: [], selectedId: null, cursor: null, lastPayload: null };
-$("ep").textContent = API_URL || "(not set)";
-
-/* ====== Chips ====== */
-const norm = (t) => {
-  t = (t || "").trim(); if (!t) return "";
-  const m = t.match(/\(([A-Za-z0-9]{3,4})\)\s*$/); t = m ? m[1] : t;
-  return /^[A-Za-z0-9]{3,4}$/.test(t) ? t.toUpperCase() : t;
-};
-const add = (k, v) => { v = norm(v); if (!v || S[k].includes(v)) return; S[k].push(v); renderChips(); };
-const del = (k, v) => { S[k] = S[k].filter(x => x !== v); renderChips(); };
-const chip = (k, v) => {
-  const d = document.createElement("div"); d.className = "chip"; d.innerHTML = `<span>${v}</span>`;
-  const b = document.createElement("button"); b.textContent = "✕"; b.onclick = () => del(k, v);
-  d.appendChild(b); return d;
-};
-function renderChips() {
-  for (const [k, el] of [["dep", $("depChips")], ["arr", $("arrChips")]]) {
-    el.innerHTML = ""; S[k].forEach(v => el.appendChild(chip(k, v)));
-  }
-}
-function onKey(e, k, inEl) {
-  if (e.key === "Enter" || e.key === ",") { e.preventDefault(); add(k, inEl.value.replaceAll(",", "")); inEl.value = ""; }
-}
-$("depIn").addEventListener("keydown", e => onKey(e, "dep", $("depIn")));
-$("arrIn").addEventListener("keydown", e => onKey(e, "arr", $("arrIn")));
-
-/* ====== Formatting ====== */
-const hhmm = (mins) => { mins = +mins || 0; return `${Math.floor(mins/60)}h ${mins%60}m`; };
-const money = (amount, currency) => {
-  const n = Number(amount); if (!Number.isFinite(n)) return "";
-  try { return new Intl.NumberFormat(undefined, { style:"currency", currency: currency || "USD" }).format(n); }
-  catch { return `${n} ${currency || "USD"}`; }
-};
-const shortDate = (s) => {
-  if (!s) return "";
-  const d = new Date(s); if (isNaN(d)) return String(s);
-  const mm = String(d.getMonth()+1).padStart(2,"0"), dd = String(d.getDate()).padStart(2,"0");
-  return `${mm}/${dd}`;
-};
-const errMsg = (code, extra="") => `<span class="err">${code}${extra ? ": " + extra : ""}</span>`;
-const safeOpen = (u) => { try { const x = new URL(u); if (x.protocol==="http:"||x.protocol==="https:") window.open(u,"_blank","noopener,noreferrer"); } catch {} };
-
-/* ====== Expected backend JSON ======
-{
-  ok: true,
-  hasMore: true/false,
-  cursor: "optional",
-  results: [{
-    id, date, from, to,
-    tripType, durationMinutes, stops,
-    baggage, badges:[],
-    airline:{code,name,logoUrl},
-    price:{amount,currency},
-    bookingUrl
-  }]
-}
-or error:
-{ ok:false, error:{code,message} }
-==================================== */
-
-function logoNode(r) {
-  const w = document.createElement("div"); w.className = "logo";
-  const url = r?.airline?.logoUrl;
-  if (url) { const img = document.createElement("img"); img.alt = r?.airline?.code || "airline"; img.src = url; w.appendChild(img); }
-  else { const m = document.createElement("div"); m.className = "mark"; m.textContent = (r?.airline?.code || "✈").slice(0,3); w.appendChild(m); }
-  return w;
-}
-
-function resultRow(r) {
-  const row = document.createElement("div"); row.className = "resultRow"; row.dataset.id = r.id || "";
-  if (S.selectedId && r.id === S.selectedId) row.classList.add("selected");
-
-  const mid = document.createElement("div"); mid.className = "mid";
-
-  const topline = document.createElement("div"); topline.className = "topline";
-  const dateTxt = document.createElement("div"); dateTxt.className = "dateTxt"; dateTxt.textContent = shortDate(r.date);
-  const tripMeta = document.createElement("div"); tripMeta.className = "tripMeta";
-  const parts = [];
-  if (r.tripType) parts.push(r.tripType);
-  if (r.durationMinutes != null) parts.push(hhmm(r.durationMinutes));
-  if (r.stops != null) parts.push(`${r.stops} stop${r.stops === 1 ? "" : "s"}`);
-  tripMeta.textContent = parts.join(" • ");
-  topline.appendChild(dateTxt); topline.appendChild(tripMeta);
-
-  const routeLine = document.createElement("div"); routeLine.className = "routeLine";
-  const routeMain = document.createElement("div"); routeMain.className = "routeMain";
-  routeMain.textContent = `${r.from || "—"} → ${r.to || "—"}`;
-  routeLine.appendChild(routeMain);
-
-  const badges = document.createElement("div"); badges.className = "badges";
-  (r.badges || []).slice(0,3).forEach(b => {
-    const s = document.createElement("span"); s.className = "badge"; s.textContent = b; badges.appendChild(s);
-  });
-
-  const small = document.createElement("div"); small.className = "smallLine";
-  const airlineName = r?.airline?.name || r?.airline?.code;
-  if (airlineName) small.appendChild(Object.assign(document.createElement("span"), { textContent: airlineName }));
-  if (r.baggage) small.appendChild(Object.assign(document.createElement("span"), { textContent: r.baggage }));
-
-  mid.appendChild(topline); mid.appendChild(routeLine);
-  if (badges.childNodes.length) mid.appendChild(badges);
-  if (small.childNodes.length) mid.appendChild(small);
-
-  const right = document.createElement("div"); right.className = "right";
-  const p = document.createElement("div"); p.className = "price";
-  p.textContent = money(r?.price?.amount, r?.price?.currency);
-  const radio = document.createElement("div"); radio.className = "radio";
-  right.appendChild(p); right.appendChild(radio);
-
-  row.appendChild(logoNode(r));
-  row.appendChild(mid);
-  row.appendChild(right);
-
-  row.addEventListener("click", () => {
-    S.selectedId = r.id || null;
-    renderResults();
-    if (r.bookingUrl) safeOpen(r.bookingUrl);
-  });
-
-  return row;
-}
-
-function renderResults() {
-  const list = $("list"); list.innerHTML = "";
-  if (!S.results.length) { list.innerHTML = `<div class="empty">No results.</div>`; $("more").style.display = "none"; return; }
-  S.results.forEach(r => list.appendChild(resultRow(r)));
-}
-
-function setMore(hasMore) { $("more").style.display = hasMore ? "flex" : "none"; }
-
-function validate() {
-  if (!API_URL) return "ERR_NO_ENDPOINT";
-  if (!S.dep.length) return "ERR_NO_DEPARTURE";
-  if (!S.arr.length) return "ERR_NO_ARRIVAL";
-  if (!$("d1").value || !$("d2").value) return "ERR_NO_DATES";
-  if ($("d2").value < $("d1").value) return "ERR_BAD_RANGE";
-  const p = Number($("pax").value);
-  if (!Number.isFinite(p) || p < 1 || p > 9) return "ERR_BAD_PAX";
-  return null;
-}
-
-async function callBackend(payload) {
-  const res = await fetch(API_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload)
-  });
-  if (!res.ok) throw new Error(`ERR_HTTP_${res.status}`);
-  return await res.json();
-}
-
-async function search(isLoadMore=false) {
-  const code = validate();
-  if (code) { $("st").innerHTML = errMsg(code); return; }
-
-  $("go").disabled = true;
-  $("st").textContent = isLoadMore ? "Loading more options…" : "Searching…";
-
-  const payload = isLoadMore
-    ? { ...S.lastPayload, cursor: S.cursor }
-    : {
-        departures: S.dep,
-        arrivals: S.arr,
-        dateStart: $("d1").value,
-        dateEnd: $("d2").value,
-        passengers: Number($("pax").value)
-      };
-
-  try {
-    const raw = await callBackend(payload);
-
-    if (raw?.ok === false) {
-      const c = raw?.error?.code || "ERR_BACKEND";
-      const msg = raw?.error?.message || "";
-      $("st").innerHTML = errMsg(c, msg);
-      return;
-    }
-
-    const results = raw?.results;
-    if (!Array.isArray(results)) { $("st").innerHTML = errMsg("ERR_BAD_JSON"); return; }
-
-    if (!isLoadMore) {
-      S.results = results;
-      S.selectedId = null;
-      S.lastPayload = payload;
-    } else {
-      S.results = S.results.concat(results);
-    }
-
-    S.cursor = raw?.cursor ?? null;
-    setMore(Boolean(raw?.hasMore));
-
-    renderResults();
-    $("st").textContent = `Found ${S.results.length} option${S.results.length === 1 ? "" : "s"}.`;
-  } catch (e) {
-    $("st").innerHTML = errMsg(String(e.message || "ERR_NET"));
-  } finally {
-    $("go").disabled = false;
-  }
-}
-
-$("go").onclick = () => search(false);
-$("moreBtn").onclick = () => search(true);
-renderChips();
-</script>
 </body>
 </html>
